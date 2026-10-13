@@ -8,6 +8,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+from app_metadata import APP_NAME, AUTHOR, COPYRIGHT, LICENSE, VERSION
 from crc32_core import CalculationCancelled, calculate_intel_hex, calculate_raw
 
 
@@ -22,7 +23,11 @@ def format_size(size):
 class CRC32App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("CRC32 Checker")
+        self.title(APP_NAME)
+        resource_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+        icon_path = resource_root / "assets" / "icon.ico"
+        if sys.platform == "win32" and icon_path.exists():
+            self.iconbitmap(str(icon_path))
         self.geometry("780x530")
         self.minsize(690, 510)
         self.protocol("WM_DELETE_WINDOW", self.close)
@@ -37,6 +42,11 @@ class CRC32App(tk.Tk):
         self.details = tk.StringVar(value="Выберите файл .hex или .bin для расчёта CRC32.")
         self.status = tk.StringVar(value="Готово")
         self._build_ui()
+        menu = tk.Menu(self)
+        help_menu = tk.Menu(menu, tearoff=False)
+        help_menu.add_command(label="О программе…", command=self.show_about)
+        menu.add_cascade(label="Справка", menu=help_menu)
+        self.configure(menu=menu)
         self.bind("<Control-o>", lambda event: self.choose_file())
         self.bind("<Escape>", lambda event: self.cancel())
         self.poll_id = self.after(80, self._poll_events)
@@ -206,6 +216,36 @@ class CRC32App(tk.Tk):
             self.cancel_event.set()
             self.cancel_button.configure(state="disabled")
             self.status.set("Отмена…")
+
+    def show_about(self):
+        resource_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+        window = tk.Toplevel(self)
+        window.title("О программе")
+        window.geometry("660x460")
+        window.minsize(500, 340)
+        window.transient(self)
+        frame = ttk.Frame(window, padding=16)
+        frame.pack(fill="both", expand=True)
+        ttk.Label(frame, text="{} {}".format(APP_NAME, VERSION),
+                  font=("Segoe UI", 16, "bold")).pack(anchor="w")
+        ttk.Label(frame, text="Автор: {}\n{}\nЛицензия: {}".format(
+            AUTHOR, COPYRIGHT, LICENSE)).pack(anchor="w", pady=(8, 12))
+        notebook = ttk.Notebook(frame)
+        notebook.pack(fill="both", expand=True)
+        for title, filename in (("MIT", "LICENSE"), ("Компоненты", "THIRD_PARTY_NOTICES.md")):
+            tab = ttk.Frame(notebook)
+            text = tk.Text(tab, wrap="word", font=("Consolas", 10), padx=8, pady=8)
+            scroll = ttk.Scrollbar(tab, command=text.yview)
+            text.configure(yscrollcommand=scroll.set)
+            scroll.pack(side="right", fill="y")
+            text.pack(fill="both", expand=True)
+            license_path = resource_root / filename
+            content = license_path.read_text(encoding="utf-8") if license_path.exists() else "Текст доступен в репозитории проекта."
+            text.insert("1.0", content)
+            text.configure(state="disabled")
+            notebook.add(tab, text=title)
+        ttk.Button(frame, text="Закрыть", command=window.destroy).pack(anchor="e", pady=(12, 0))
+        return window
 
     def close(self):
         self.closing = True

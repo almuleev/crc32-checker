@@ -4,3 +4,5 @@ build/
 dist/
 .build-temp/
 .portable-test/
+.tools/
+portable-check.json

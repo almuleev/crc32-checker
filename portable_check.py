@@ -7,13 +7,14 @@ import time
 import traceback
 from pathlib import Path
 
+from app_metadata import AUTHOR, VERSION
 from crc32_core import HexFormatError, calculate_intel_hex, calculate_raw
 
 
 def run_self_test(app_factory, report_path):
     report_path = Path(report_path).resolve()
     report = {"ok": False, "frozen": bool(getattr(sys, "frozen", False)),
-              "python": sys.version, "checks": []}
+              "python": sys.version, "version": VERSION, "author": AUTHOR, "checks": []}
     app = None
     try:
         with tempfile.TemporaryDirectory(dir=str(report_path.parent)) as directory:
@@ -41,6 +42,18 @@ def run_self_test(app_factory, report_path):
             app.withdraw()
             app.update()
             report["checks"].append("tk_window_created")
+            if report["frozen"]:
+                resource_root = Path(sys._MEIPASS)
+                for filename in ("LICENSE", "THIRD_PARTY_NOTICES.md", "licenses/PYTHON.txt",
+                                 "licenses/TCL.txt", "licenses/TK.txt", "licenses/ZLIB.txt",
+                                 "licenses/ZLIB-NG.txt", "licenses/PYINSTALLER.txt"):
+                    if not (resource_root / filename).is_file():
+                        raise AssertionError("Missing bundled notice: " + filename)
+                report["checks"].append("bundled_licenses")
+            about = app.show_about()
+            about.update()
+            about.destroy()
+            report["checks"].append("about_window")
             app.path.set(str(hex_file))
             app.calculate()
             deadline = time.monotonic() + 10
