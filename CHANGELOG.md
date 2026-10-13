@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Зафиксированы Python 3.14.4 и packaging hooks для автоматической сборки:
+  PyInstaller 6.20.0 поддерживает ресурсы Tcl/Tk 8.6 этой версии Python.
+
 ## [1.0.0] — 2026-10-13
 
 Первый публичный релиз CRC32 Checker.

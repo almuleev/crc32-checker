@@ -1,4 +1,9 @@
 # Build a single portable Windows executable with its Python and Tcl/Tk runtime.
+import sys
+
+if sys.version_info[:3] != (3, 14, 4) or sys.maxsize <= 2**32:
+    raise RuntimeError('Portable builds require Python 3.14.4 x64 with Tcl/Tk 8.6.')
+
 a = Analysis(
     ['crc32_checker.py'],
     pathex=[],
