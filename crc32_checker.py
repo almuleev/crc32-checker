@@ -10,6 +10,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from app_metadata import APP_NAME, AUTHOR, COPYRIGHT, LICENSE, VERSION
 from crc32_core import CalculationCancelled, calculate_intel_hex, calculate_raw
+from windows_drop import WindowsFileDrop
 
 
 AUTO_MODE = "Авто: .hex — Intel HEX, .bin — байты файла"
@@ -35,11 +36,12 @@ class CRC32App(tk.Tk):
         self.cancel_event = threading.Event()
         self.busy = False
         self.closing = False
+        self.drop_target = None
         self.result = None
         self.path = tk.StringVar()
         self.mode = tk.StringVar(value=AUTO_MODE)
         self.checksum = tk.StringVar(value="—")
-        self.details = tk.StringVar(value="Выберите файл .hex или .bin для расчёта CRC32.")
+        self.details = tk.StringVar(value="Выберите файл .hex или .bin или перетащите его в окно.")
         self.status = tk.StringVar(value="Готово")
         self._build_ui()
         menu = tk.Menu(self)
@@ -47,6 +49,14 @@ class CRC32App(tk.Tk):
         help_menu.add_command(label="О программе…", command=self.show_about)
         menu.add_cascade(label="Справка", menu=help_menu)
         self.configure(menu=menu)
+        if sys.platform == "win32":
+            self.update_idletasks()
+            try:
+                self.drop_target = WindowsFileDrop(
+                    self.winfo_id(), lambda paths: self.events.put(("drop", paths)),
+                    lambda error: self.events.put(("drop_error", error)))
+            except OSError as error:
+                self.status.set("Перетаскивание недоступно: {}".format(error))
         self.bind("<Control-o>", lambda event: self.choose_file())
         self.bind("<Escape>", lambda event: self.cancel())
         self.poll_id = self.after(80, self._poll_events)
@@ -60,7 +70,7 @@ class CRC32App(tk.Tk):
         frame.columnconfigure(0, weight=1)
         ttk.Label(frame, text="CRC32 Checker", font=("Segoe UI", 20, "bold")).grid(
             row=0, column=0, sticky="w")
-        ttk.Label(frame, text="Контрольная сумма файлов .hex и .bin").grid(
+        ttk.Label(frame, text="Выберите файл .hex или .bin или перетащите его в это окно").grid(
             row=1, column=0, sticky="w", pady=(2, 16))
         file_row = ttk.Frame(frame)
         file_row.grid(row=2, column=0, sticky="ew")
@@ -106,7 +116,7 @@ class CRC32App(tk.Tk):
         self.copy_button.configure(state="disabled")
         self.progress["value"] = 0
         self.details.set("Нажмите «Вычислить CRC32»." if self.path.get()
-                         else "Выберите файл .hex или .bin для расчёта CRC32.")
+                         else "Выберите файл .hex или .bin или перетащите его в окно.")
         self.status.set("Готово")
 
     def choose_file(self):
@@ -116,9 +126,28 @@ class CRC32App(tk.Tk):
                     filetypes=[("HEX и BIN", "*.hex *.bin"), ("Intel HEX", "*.hex"),
                                ("Binary", "*.bin"), ("Все файлы", "*.*")])
         if filename:
-            self.path.set(filename)
-            self._reset_result()
-            self.calculate()
+            self.open_file(filename)
+
+    def open_file(self, filename):
+        if self.busy or self.closing:
+            return
+        path = Path(filename)
+        if not path.is_file():
+            messagebox.showerror("Не удалось открыть файл",
+                                 "Выберите существующий файл, а не папку.", parent=self)
+            return
+        self.path.set(str(path))
+        self._reset_result()
+        self.calculate()
+
+    def _handle_drop(self, paths):
+        if self.busy or self.closing:
+            self.status.set("Дождитесь завершения расчёта или нажмите «Отмена».")
+            return
+        if len(paths) != 1:
+            messagebox.showinfo("Выбор файла", "Перетащите один файл за раз.", parent=self)
+            return
+        self.open_file(paths[0])
 
     def _set_busy(self, busy):
         self.busy = busy
@@ -127,6 +156,8 @@ class CRC32App(tk.Tk):
         self.calculate_button.configure(state=state)
         self.mode_box.configure(state="disabled" if busy else "readonly")
         self.cancel_button.configure(state="normal" if busy else "disabled")
+        if self.drop_target is not None:
+            self.drop_target.set_enabled(not busy)
 
     def calculate(self):
         if self.busy:
@@ -168,7 +199,11 @@ class CRC32App(tk.Tk):
         try:
             while True:
                 event, payload = self.events.get_nowait()
-                if event == "progress":
+                if event == "drop":
+                    self._handle_drop(payload)
+                elif event == "drop_error":
+                    self.status.set("Ошибка перетаскивания: {}".format(payload))
+                elif event == "progress":
                     self.progress["value"] = payload * 100
                 else:
                     self._set_busy(False)
@@ -251,6 +286,8 @@ class CRC32App(tk.Tk):
         self.closing = True
         self.cancel_event.set()
         self.after_cancel(self.poll_id)
+        if self.drop_target is not None:
+            self.drop_target.detach()
         self.destroy()
 
 

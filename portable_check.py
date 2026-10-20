@@ -11,6 +11,48 @@ from app_metadata import AUTHOR, VERSION
 from crc32_core import HexFormatError, calculate_intel_hex, calculate_raw
 
 
+def send_windows_file_drop(window_id, paths):
+    """Exercise the native Explorer HDROP message, including UTF-16 filenames.
+
+    Diagnostic/test helper: the destination must be an enabled WindowsFileDrop
+    window, which takes ownership of the allocated handle via DragFinish.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    class DROPFILES(ctypes.Structure):
+        _fields_ = [("pFiles", wintypes.DWORD), ("pt", wintypes.POINT),
+                    ("fNC", wintypes.BOOL), ("fWide", wintypes.BOOL)]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+    kernel32.GlobalAlloc.restype = wintypes.HANDLE
+    kernel32.GlobalLock.argtypes = [wintypes.HANDLE]
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalUnlock.argtypes = [wintypes.HANDLE]
+    kernel32.GlobalUnlock.restype = wintypes.BOOL
+    kernel32.GlobalFree.argtypes = [wintypes.HANDLE]
+    kernel32.GlobalFree.restype = wintypes.HANDLE
+    user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+    user32.SendMessageW.restype = ctypes.c_ssize_t
+    header = DROPFILES()
+    header.pFiles = ctypes.sizeof(header)
+    header.fWide = True
+    data = ("\0".join(str(path) for path in paths) + "\0\0").encode("utf-16-le")
+    handle = kernel32.GlobalAlloc(0x0042, ctypes.sizeof(header) + len(data))
+    if not handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    pointer = kernel32.GlobalLock(handle)
+    if not pointer:
+        kernel32.GlobalFree(handle)
+        raise ctypes.WinError(ctypes.get_last_error())
+    ctypes.memmove(pointer, ctypes.byref(header), ctypes.sizeof(header))
+    ctypes.memmove(pointer + ctypes.sizeof(header), data, len(data))
+    kernel32.GlobalUnlock(handle)
+    user32.SendMessageW(window_id, 0x0233, handle, 0)
+
+
 def run_self_test(app_factory, report_path):
     report_path = Path(report_path).resolve()
     report = {"ok": False, "frozen": bool(getattr(sys, "frozen", False)),
@@ -67,6 +109,21 @@ def run_self_test(app_factory, report_path):
             if app.clipboard_get() != "CBF43926":
                 raise AssertionError("Incorrect clipboard value")
             report["checks"].append("clipboard")
+            if sys.platform == "win32":
+                if app.drop_target is None:
+                    raise AssertionError("Native file drop registration failed")
+                dropped_file = Path(directory) / "прошивка с пробелами {1}.bin"
+                dropped_file.write_bytes(b"123456789")
+                send_windows_file_drop(app.drop_target.hwnd, [dropped_file])
+                deadline = time.monotonic() + 10
+                while time.monotonic() < deadline:
+                    app.update()
+                    if app.path.get() == str(dropped_file) and not app.busy:
+                        break
+                    time.sleep(0.01)
+                if app.busy or app.path.get() != str(dropped_file) or app.checksum.get() != "CBF43926":
+                    raise AssertionError("Native Windows file drop did not calculate CRC32")
+                report["checks"].append("windows_file_drop")
             report["ok"] = True
     except Exception:
         report["error"] = traceback.format_exc()
