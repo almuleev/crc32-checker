@@ -8,13 +8,10 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from app_metadata import APP_NAME, AUTHOR, COPYRIGHT, LICENSE, VERSION
+from about_dialog import show_about_dialog
+from app_metadata import APP_NAME
 from crc32_core import CalculationCancelled, calculate_intel_hex, calculate_raw
 from windows_drop import WindowsFileDrop
-
-
-AUTO_MODE = "Авто: .hex — Intel HEX, .bin — байты файла"
-RAW_MODE = "Исходные байты файла (включая текст .hex)"
 
 
 def format_size(size):
@@ -29,8 +26,8 @@ class CRC32App(tk.Tk):
         icon_path = resource_root / "assets" / "icon.ico"
         if sys.platform == "win32" and icon_path.exists():
             self.iconbitmap(str(icon_path))
-        self.geometry("780x530")
-        self.minsize(690, 510)
+        self.geometry("780x470")
+        self.minsize(690, 450)
         self.protocol("WM_DELETE_WINDOW", self.close)
         self.events = queue.Queue()
         self.cancel_event = threading.Event()
@@ -39,15 +36,12 @@ class CRC32App(tk.Tk):
         self.drop_target = None
         self.result = None
         self.path = tk.StringVar()
-        self.mode = tk.StringVar(value=AUTO_MODE)
         self.checksum = tk.StringVar(value="—")
         self.details = tk.StringVar(value="Выберите файл .hex или .bin или перетащите его в окно.")
         self.status = tk.StringVar(value="Готово")
         self._build_ui()
         menu = tk.Menu(self)
-        help_menu = tk.Menu(menu, tearoff=False)
-        help_menu.add_command(label="О программе…", command=self.show_about)
-        menu.add_cascade(label="Справка", menu=help_menu)
+        menu.add_command(label="О программе", command=self.show_about)
         self.configure(menu=menu)
         if sys.platform == "win32":
             self.update_idletasks()
@@ -79,36 +73,31 @@ class CRC32App(tk.Tk):
             row=0, column=0, sticky="ew", padx=(0, 10))
         self.browse_button = ttk.Button(file_row, text="Выбрать файл…", command=self.choose_file)
         self.browse_button.grid(row=0, column=1)
-        ttk.Label(frame, text="Данные для расчёта").grid(row=3, column=0, sticky="w", pady=(16, 5))
-        self.mode_box = ttk.Combobox(frame, textvariable=self.mode,
-                                    values=(AUTO_MODE, RAW_MODE), state="readonly")
-        self.mode_box.grid(row=4, column=0, sticky="ew")
-        self.mode_box.bind("<<ComboboxSelected>>", lambda event: self._reset_result())
         hint = ttk.Label(frame, text="Intel HEX: адреса по возрастанию; промежутки — FF;"
                          " служебные записи исключены.", wraplength=710)
-        hint.grid(row=5, column=0, sticky="w", pady=(5, 12))
+        hint.grid(row=3, column=0, sticky="w", pady=(12, 12))
         actions = ttk.Frame(frame)
-        actions.grid(row=6, column=0, sticky="w")
+        actions.grid(row=4, column=0, sticky="w")
         self.calculate_button = ttk.Button(actions, text="Вычислить CRC32", command=self.calculate)
         self.calculate_button.pack(side="left")
         self.cancel_button = ttk.Button(actions, text="Отмена", command=self.cancel, state="disabled")
         self.cancel_button.pack(side="left", padx=10)
         self.progress = ttk.Progressbar(frame, maximum=100, mode="determinate")
-        self.progress.grid(row=7, column=0, sticky="ew", pady=(14, 10))
+        self.progress.grid(row=5, column=0, sticky="ew", pady=(14, 10))
         result_frame = ttk.LabelFrame(frame, text="CRC-32/ISO-HDLC", padding=(14, 8))
-        result_frame.grid(row=8, column=0, sticky="ew")
+        result_frame.grid(row=6, column=0, sticky="ew")
         result_frame.columnconfigure(0, weight=1)
         ttk.Label(result_frame, textvariable=self.checksum,
                   font=("Consolas", 30, "bold")).grid(row=0, column=0, sticky="w")
         self.copy_button = ttk.Button(result_frame, text="Копировать", command=self.copy, state="disabled")
         self.copy_button.grid(row=0, column=1, padx=(10, 0))
         details_label = ttk.Label(frame, textvariable=self.details, wraplength=710, justify="left")
-        details_label.grid(row=9, column=0, sticky="nw", pady=(12, 8))
+        details_label.grid(row=7, column=0, sticky="nw", pady=(12, 8))
         frame.bind("<Configure>", lambda event: (
             hint.configure(wraplength=max(200, event.width - 40)),
             details_label.configure(wraplength=max(200, event.width - 40))))
-        frame.rowconfigure(9, weight=1)
-        ttk.Label(frame, textvariable=self.status).grid(row=10, column=0, sticky="w")
+        frame.rowconfigure(7, weight=1)
+        ttk.Label(frame, textvariable=self.status).grid(row=8, column=0, sticky="w")
 
     def _reset_result(self):
         self.result = None
@@ -154,7 +143,6 @@ class CRC32App(tk.Tk):
         state = "disabled" if busy else "normal"
         self.browse_button.configure(state=state)
         self.calculate_button.configure(state=state)
-        self.mode_box.configure(state="disabled" if busy else "readonly")
         self.cancel_button.configure(state="normal" if busy else "disabled")
         if self.drop_target is not None:
             self.drop_target.set_enabled(not busy)
@@ -166,7 +154,7 @@ class CRC32App(tk.Tk):
             self.choose_file()
             return
         path = Path(self.path.get())
-        use_hex = self.mode.get() == AUTO_MODE and path.suffix.lower() == ".hex"
+        use_hex = path.suffix.lower() == ".hex"
         self._reset_result()
         self.cancel_event = threading.Event()
         self._set_busy(True)
@@ -253,34 +241,7 @@ class CRC32App(tk.Tk):
             self.status.set("Отмена…")
 
     def show_about(self):
-        resource_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
-        window = tk.Toplevel(self)
-        window.title("О программе")
-        window.geometry("660x460")
-        window.minsize(500, 340)
-        window.transient(self)
-        frame = ttk.Frame(window, padding=16)
-        frame.pack(fill="both", expand=True)
-        ttk.Label(frame, text="{} {}".format(APP_NAME, VERSION),
-                  font=("Segoe UI", 16, "bold")).pack(anchor="w")
-        ttk.Label(frame, text="Автор: {}\n{}\nЛицензия: {}".format(
-            AUTHOR, COPYRIGHT, LICENSE)).pack(anchor="w", pady=(8, 12))
-        notebook = ttk.Notebook(frame)
-        notebook.pack(fill="both", expand=True)
-        for title, filename in (("MIT", "LICENSE"), ("Компоненты", "THIRD_PARTY_NOTICES.md")):
-            tab = ttk.Frame(notebook)
-            text = tk.Text(tab, wrap="word", font=("Consolas", 10), padx=8, pady=8)
-            scroll = ttk.Scrollbar(tab, command=text.yview)
-            text.configure(yscrollcommand=scroll.set)
-            scroll.pack(side="right", fill="y")
-            text.pack(fill="both", expand=True)
-            license_path = resource_root / filename
-            content = license_path.read_text(encoding="utf-8") if license_path.exists() else "Текст доступен в репозитории проекта."
-            text.insert("1.0", content)
-            text.configure(state="disabled")
-            notebook.add(tab, text=title)
-        ttk.Button(frame, text="Закрыть", command=window.destroy).pack(anchor="e", pady=(12, 0))
-        return window
+        return show_about_dialog(self)
 
     def close(self):
         self.closing = True

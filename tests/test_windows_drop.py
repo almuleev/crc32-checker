@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from crc32_checker import CRC32App, RAW_MODE
+from crc32_checker import CRC32App
 from portable_check import send_windows_file_drop
 
 
@@ -43,10 +43,9 @@ class WindowsDropTests(unittest.TestCase):
         self.wait_for_drop(path)
         self.assertIn("Intel HEX", self.app.details.get())
 
-    def test_drop_preserves_raw_mode(self):
-        path = self.path.with_suffix(".hex")
+    def test_drop_uses_raw_bytes_for_other_extensions(self):
+        path = self.path.with_suffix(".dat")
         path.write_bytes(b"123456789")
-        self.app.mode.set(RAW_MODE)
         send_windows_file_drop(self.app.drop_target.hwnd, [path])
         self.wait_for_drop(path)
         self.assertIn("Исходные байты", self.app.details.get())

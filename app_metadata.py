@@ -1,7 +1,7 @@
 """Public application metadata."""
 
 APP_NAME = "CRC32 Checker"
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 AUTHOR = "Aleksandr Muleev"
 COPYRIGHT = "Copyright (c) 2026 Aleksandr Muleev"
 LICENSE = "MIT"
